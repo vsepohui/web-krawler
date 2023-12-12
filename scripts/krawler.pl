@@ -28,13 +28,10 @@ my $cmd = $ARGV[0] || 'help';
 $cmd =~ s/\W//g;
 
 my $config = Krawler::Config->get;
-my $redis = AnyEvent::Redis->new(
-  host => '127.0.0.1',
-  port => '6379',
-);
 
+my $redis = AnyEvent::Redis->new(%{$config->{redis}});
+my $redis2 = new Redis(server => join (':', $config->{redis}->{host}, $config->{redis}->{port}));
 
-my $redis2 = new Redis;
 my $routes = [
 	[[qw/worker/],				\&worker],
     [[qw/factory start/], 		\&factory],
