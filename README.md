@@ -6,4 +6,5 @@ sudo apt install redis
 
 # Usage
 
-./scripts/krawler.pl
+./scripts/krawler.pl start
+./scripts/page-render-queue.pl start
