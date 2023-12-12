@@ -8,7 +8,9 @@ use Sub::Daemon;
 use Krawler::Config;
 use URL::Search;
 use Redis;
+use List::Uniq qw/uniq/;
 
+use constant PORT_START_FROM => 3000;
 use constant REDIS_PAGE_PREF => 'web-krawler:page:';
 use constant REDIS_PAGE_CTIME => 'web-krawler:ctime:';
 use constant REDIS_QUEUE => "web-krawler:queue";
@@ -47,13 +49,13 @@ sub worker {
 	}
 
 	my $daemon = new Sub::Daemon(
-		debug => 0,
+		debug => 1,
 		piddir 	=> "$Bin/../pids/",
 		logdir 	=> "$Bin/../logs/",
 		pidfile => "krawler.worker.$port.pid",
 		logfile => "krawler.worker.$port.log",
 	);
-	$daemon->_daemonize;
+	#$daemon->_daemonize;
 	
 	$daemon->spawn(
 		nproc => 1,
@@ -65,23 +67,32 @@ sub worker {
 			$SIG{$_} = sub { $cv->send } for qw( TERM INT );
 			$SIG{'HUP'} = sub {$cv->send};
 			
-			my $url = $redis->blpop(REDIS_QUEUE);
+			my ($q, $url) = $redis->blpop(REDIS_QUEUE(), 10000);
+			use Data::Dumper;
+			 warn Dumper $url;
 			http_get $url, sub {
+				warn "Fetched url $url";
 				my $data = shift;
 				my $headers = shift;
-				return unless $header->{content_type} ~~ ['text/html', 'text/plain'];
+				use Data::Dumper;
+				warn Dumper ($headers);
+				my $type = $headers->{'content-type'};
+				$type =~ s/;.+$//;
+				return unless $type ~~ ['text/html', 'text/plain'];
 				if (length ($data) < 1_00_0000) {
+					warn "Data $url => " . $data;
 					$redis->set(REDIS_PAGE_PREF.$url => $data);
 					$redis->set(REDIS_PAGE_CTIME => time());
 					
-					my @urls = URL::Search::extract_urls($data);
+					my @urls = uniq (URL::Search::extract_urls($data));
 					for (@urls) {
-						$redis->push(REDIS_QUEUE, $_) unless $redis->get(REDIS_PAGE_PREF.$_);
+						warn $_;
+						$redis->rpush(REDIS_QUEUE(), $_) unless $redis->get(REDIS_PAGE_PREF.$_);
 					}
 				}
 			};
 			
-			$cv->wait;
+			$cv->recv;
 		},
 	);
 }
@@ -89,13 +100,15 @@ sub worker {
 
 sub factory {
 	my $daemon = new Sub::Daemon(
-		debug => 0,
+		debug => 1,
 		piddir => "$Bin/../pids/",
 		logdir => "$Bin/../logs/",
 	);
-	$daemon->_daemonize;
+	#$daemon->_daemonize;
 	
 	my $procs = $config->{ncpus};
+	
+	$redis->rpush(REDIS_QUEUE() => $config->{homepage});
 	
 	for (1..$procs) {
 		my $port = PORT_START_FROM() + $_ - 1;
@@ -103,7 +116,9 @@ sub factory {
 		`$Bin/$0 worker $port`;
 	}
 	
-	$redis->push(REDIS_QUEUE, $config->{homepage});
+	
+	
+	
 
 	$daemon->spawn(
 		nproc => 1,
