@@ -60,13 +60,11 @@ my $cnt = 0;
 my %wait2 = ();
 my %bad_domain = ();
 
-
+my $idle = undef;
 
 sub work {
 	my $cv = shift;
-	$cnt ++;
 
-	warn "Startig BLPOP";
 	$wait2{$cnt} = $redis->blpop(REDIS_QUEUE(), 10, sub {
 		delete $wait2{$cnt};
 
@@ -74,14 +72,17 @@ sub work {
 		warn "URL => ".Dumper \@_;
 		
 		my ($p) = @_;
-		return unless $p;
+		unless ($p) {
+			$cnt --;
+			return;
+		}
 		my ($q, $url) = @$p;
 		
 
 					
 		unless ($url) {
 			warn "No url";
-
+			$cnt --;
 			return;
 		}
 
@@ -92,6 +93,7 @@ sub work {
 			headers => { "user-agent" => "MySearchClient 1.0" },
 			timeout => 10,
 			sub {
+					$cnt --;
 				delete $waits{$url};
 				$redis2->hdel(REDIS_LOCK(),$url);
 				my $uri = URI->new($url);
@@ -110,19 +112,19 @@ sub work {
 					#$redis2->set(REDIS_PAGE_CTIME().$url => time());
 					$redis2->hset(REDIS_LOCK(), $url => 1);
 					$bad_domain{$uri->host}++;
-					work();
+#					work();
 					return;
 				} elsif ($headers->{Status} ne '200') {
 					$redis2->hset(REDIS_LOCK(), $url => 1);
 					$bad_domain{$uri->host}++;
-					work();
+#					work();
 					return;
 				}
 
 				my $type = $headers->{'content-type'};
 				$type =~ s/;.+$//;
 				unless ($type ~~ ['text/html', 'text/plain']) {
-					$cv->send unless keys %wait2;
+					#$cv->send unless keys %wait2;
 					return;
 				}
 				if (length ($data) < 1_00_0000) {
@@ -170,8 +172,7 @@ sub work {
 						}
 					}
 				}
-				return $cv->send unless keys %wait2;
-				work();
+				#work();
 			},
 		);
 	});
@@ -205,7 +206,19 @@ sub worker {
 			$SIG{'HUP'} = sub {$cv->send};
 
 			my $m = $config->{max_requests_per_one_process};
-			work($cv) for 1..$m;
+			for (1..$m) {
+				work($cv);
+				$cnt ++;
+			}
+			
+			$idle = AnyEvent->idle(cb => sub {
+				if ($cnt < $m) {
+					for (1..($m-$cnt)) {
+						work($cv);
+						$cnt ++;
+					}
+				}
+			});
 			
 			$cv->recv;
 		},
