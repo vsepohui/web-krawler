@@ -13,7 +13,6 @@ use 5.024;
 use AnyEvent;
 use AnyEvent::HTTP;
 use Sub::Daemon;
-use URL::Search;
 use HTML::LinkExtor;
 use Redis;
 use AnyEvent::Redis;
@@ -58,10 +57,10 @@ exit;
 
 sub help {
     say "Usage:";
-    say "	$0 worker   				Start worker process";
-    say "	$0 start					Start factory process";
-    say "	$0 stop						Stop factory process and workers";
-    say "	$0 help						Show this help";
+    say "	$0 worker   Start worker process";
+    say "	$0 start    Start factory process";
+    say "	$0 stop     Stop factory process and workers";
+    say "	$0 help     Show this help";
 }
 
 my %waits = ();
