@@ -38,6 +38,7 @@ my $redis2 = new Redis;
 my $routes = [
 	[[qw/worker/],				\&worker],
     [[qw/factory start/], 		\&factory],
+    [[qw/stop/], 				\&stop],	
     [[qw/help/], 				\&help],
 ];
 
@@ -49,7 +50,8 @@ sub help {
     say "Usage:";
     say "	$0 worker   				Start worker process";
     say "	$0 start					Start factory process";
-    say "	$0 help					Show this help";
+    say "	$0 stop						Stop factory process and workers";
+    say "	$0 help						Show this help";
 }
 
 my %waits = ();
@@ -208,6 +210,12 @@ sub worker {
 			$cv->recv;
 		},
 	);
+}
+
+sub stop {
+	warn "Stopping krawler";
+	`cat $Bin/../pids/$0.pid|xargs kill`;
+	exit;
 }
 
 
