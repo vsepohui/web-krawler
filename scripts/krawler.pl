@@ -146,7 +146,7 @@ sub work {
 							next;
 						} elsif ($url =~ /^\/\// ) {
 							$url = $proto . ':' . $url;
-						} elsif ($url =~ /^[\w\d_]/ ) {
+						} elsif ($url =~ /^[\w\d_\.]/ ) {
 							$url = $url_base . $url;
 						} elsif ($url =~ /^\#/) {
 							next;
