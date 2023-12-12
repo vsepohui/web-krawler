@@ -68,6 +68,7 @@ sub worker {
 			http_get $url, sub {
 				my $data = shift;
 				my $headers = shift;
+				return unless $header->{content_type} ~~ ['text/html', 'text/plain'];
 				if (length ($data) < 1_00_0000) {
 					$redis->set(REDIS_PAGE_PREF.$url => $data);
 					my @urls = URL::Search::extract_urls($data);
