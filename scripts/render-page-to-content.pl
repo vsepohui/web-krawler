@@ -12,7 +12,8 @@ my $config = Krawler::Config->get;
 my $redis = new Redis(server => join (':', $config->{redis}->{host}, $config->{redis}->{port}));
 my $pref = $config->{'redis_prefix'};
 
-say render_url_to_text('https://anarchy-press.ru/politics');
+my $url = $ARGV[0] or die 'Url is not specified';
+say render_url_to_text($url);
 
 sub render_url_to_text {
 	my $page = shift;
