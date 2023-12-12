@@ -63,7 +63,7 @@ sub work {
 	$cnt ++;
 
 	warn "Startig BLPOP";
-	$wait2{$cnt} = $redis->blpop(REDIS_QUEUE(), 3, sub {
+	$wait2{$cnt} = $redis->blpop(REDIS_QUEUE(), 10, sub {
 		delete $wait2{$cnt};
 
 		use Data::Dumper;
@@ -102,8 +102,17 @@ sub work {
 				use Data::Dumper;
 				warn Dumper ($headers);
 
-				if ($headers->{Status} eq '595') {
+				if ($headers->{Status} eq '506') {
+					#$redis2->set(REDIS_PAGE_CTIME().$url => time());
+					$redis2->hset(REDIS_LOCK(), $url => 1);
 					$bad_domain{$uri->host}++;
+					work();
+					return;
+				} elsif ($headers->{Status} ne '200') {
+					$redis2->hset(REDIS_LOCK(), $url => 1);
+					$bad_domain{$uri->host}++;
+					work();
+					return;
 				}
 
 				my $type = $headers->{'content-type'};
@@ -115,7 +124,7 @@ sub work {
 				if (length ($data) < 1_00_0000) {
 					warn "Data $url => " . $data;
 					$redis2->set(REDIS_PAGE_PREF().$url => $data);
-					$redis2->set(REDIS_PAGE_CTIME() => time());
+					$redis2->set(REDIS_PAGE_CTIME().$url => time());
 					
 					my @as;
 					my $p = HTML::LinkExtor->new(sub {
