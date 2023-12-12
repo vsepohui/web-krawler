@@ -8,12 +8,14 @@ use Sub::Daemon;
 use Krawler::Config;
 use URL::Search;
 use Redis;
+use AnyEvent::Redis;
 use List::Uniq qw/uniq/;
 
 use constant PORT_START_FROM => 3000;
 use constant REDIS_PAGE_PREF => 'web-krawler:page:';
 use constant REDIS_PAGE_CTIME => 'web-krawler:ctime:';
 use constant REDIS_QUEUE => "web-krawler:queue";
+use constant REDIS_LOCK => "web-krawler:lock:";
 
 use experimental 'smartmatch';
 
@@ -21,8 +23,13 @@ my $cmd = $ARGV[0] || 'help';
 $cmd =~ s/\W//g;
 
 my $config = Krawler::Config->get;
-my $redis = new Redis;
+my $redis = AnyEvent::Redis->new(
+  host => '127.0.0.1',
+  port => '6379',
+);
 
+
+my $redis2 = new Redis;
 my $routes = [
 	[[qw/worker/],				\&worker],
     [[qw/factory start/], 		\&factory],
@@ -35,9 +42,57 @@ exit();
 
 sub help {
     say "Usage:";
-    say "\t$! worker   				Start worker process";
-    say "\t$! start					Start factory process";
-    say "\t$! help					Show this help";
+    say "	$0 worker   				Start worker process";
+    say "	$0 start					Start factory process";
+    say "	$0 help					Show this help";
+}
+
+my %waits = ();
+my $cnt = 0;
+
+sub work {
+	$cnt ++;
+	$redis->lpop(REDIS_QUEUE(), sub {
+		my ($url) = (@_);
+		unless ($url) {
+			warn "No url";
+			sleep 1;
+			return;
+		}
+
+		warn "Fetching $url";
+	
+		$waits{$url} = http_get $url, sub {
+			delete $waits{$url};
+			work() if $cnt < 8000;
+			$redis2->hdel(REDIS_LOCK(),$url);
+			warn "Fetched url $url";
+			my $data = shift;
+			my $headers = shift;
+			use Data::Dumper;
+			warn Dumper ($headers);
+			my $type = $headers->{'content-type'};
+			$type =~ s/;.+$//;
+			return unless $type ~~ ['text/html', 'text/plain'];
+			if (length ($data) < 1_00_0000) {
+				warn "Data $url => " . $data;
+				$redis2->set(REDIS_PAGE_PREF().$url => $data);
+				$redis2->set(REDIS_PAGE_CTIME() => time());
+				
+				my @urls = uniq (URL::Search::extract_urls($data));
+				for my $url (@urls) {
+					warn "Found url: $url";
+					unless ($redis2->get(REDIS_PAGE_PREF.$url) && $redis2->hget(REDIS_LOCK(),$url)) {
+						$redis2->hset(REDIS_LOCK(), $url => 1);
+						warn "rpush(REDIS_QUEUE(), $url)";
+						$redis2->rpush(REDIS_QUEUE(), $url);
+					}
+				}
+			}
+		};
+		work() if $cnt < 8000;
+	});
+	#
 }
 
 
@@ -66,33 +121,10 @@ sub worker {
 			
 			$SIG{$_} = sub { $cv->send } for qw( TERM INT );
 			$SIG{'HUP'} = sub {$cv->send};
+
+			work();
 			
-			my ($q, $url) = $redis->blpop(REDIS_QUEUE(), 10000);
-			use Data::Dumper;
-			 warn Dumper $url;
-			http_get $url, sub {
-				warn "Fetched url $url";
-				my $data = shift;
-				my $headers = shift;
-				use Data::Dumper;
-				warn Dumper ($headers);
-				my $type = $headers->{'content-type'};
-				$type =~ s/;.+$//;
-				return unless $type ~~ ['text/html', 'text/plain'];
-				if (length ($data) < 1_00_0000) {
-					warn "Data $url => " . $data;
-					$redis->set(REDIS_PAGE_PREF.$url => $data);
-					$redis->set(REDIS_PAGE_CTIME => time());
-					
-					my @urls = uniq (URL::Search::extract_urls($data));
-					for (@urls) {
-						warn $_;
-						$redis->rpush(REDIS_QUEUE(), $_) unless $redis->get(REDIS_PAGE_PREF.$_);
-					}
-				}
-			};
-			
-			$cv->recv;
+			$cv->wait;
 		},
 	);
 }
@@ -108,7 +140,7 @@ sub factory {
 	
 	my $procs = $config->{ncpus};
 	
-	$redis->rpush(REDIS_QUEUE() => $config->{homepage});
+	$redis2->rpush(REDIS_QUEUE(), $config->{homepage});
 	
 	for (1..$procs) {
 		my $port = PORT_START_FROM() + $_ - 1;
