@@ -22,6 +22,8 @@ use constant REDIS_LOCK => "web-krawler:lock:";
 
 use experimental 'smartmatch';
 
+$AnyEvent::HTTP::MAX_PER_HOST = 8;
+
 my $cmd = $ARGV[0] || 'help';
 $cmd =~ s/\W//g;
 
@@ -140,14 +142,14 @@ sub work {
 						next if $url =~ /^javascript\s*:/;
 						if ($url =~ /^\//) {
 							$url = "$proto:\/\/$host2" . $url;
-						} elsif ($url =~ /^\https?:\/\// ) {
+						} elsif ($url =~ /^https?:\/\// ) {
 							1;
 						}  elsif ($url =~ /^\/\// ) {
 							$url = $proto . ':' . $url;
 						} elsif ($url =~ /^\[.]/ ) {
 							$url = $url_base . $url;
 						} else {
-							warn "Worng url $url";
+							warn "Wrong url $url";
 							next;
 						}
 						warn $url;
