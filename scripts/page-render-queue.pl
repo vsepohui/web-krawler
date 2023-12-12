@@ -38,6 +38,7 @@ use constant REDIS_QUEUE => ($config->{'redis_prefix'} . ":queue");
 use constant REDIS_RENDER_QUEUE => ($config->{'redis_prefix'} . ":render-queue");
 use constant REDIS_LOCK =>( $config->{'redis_prefix'} . ":lock:");
 
+
 my $redis = AnyEvent::Redis->new(
 	host => $config->{redis}->{host},
 	port => $config->{redis}->{port},
@@ -88,29 +89,29 @@ sub work {
 		
 		my ($q, $url) = @$p;
 		
-		warn $url;
-		warn "url $url";
+		#warn $url;
 		if ($url) {
 			my $tmp_file = "$Bin/../tmp/tmp.$$.$id.html";
 			my $tmp_file2 = "$Bin/../tmp/tmp.$$.$id.txt";
 			system("$Bin/render-page-to-content.pl", $url, $tmp_file, $tmp_file2);
-			warn join (" ", "$Bin/render-page-to-content.pl", $url, $tmp_file, $tmp_file2);
+			#warn join (" ", "$Bin/render-page-to-content.pl", $url, $tmp_file, $tmp_file2);
 			my $text;
 			my $fi;
 			open $fi, $tmp_file2;
-			binmode($fi, ":utf8");
+			binmode($fi);
 			$text = join '', <$fi>;
 			close $fi;
 			
 			unlink $tmp_file2;
 
-			warn $text;
 			$redis2->set(REDIS_TEXT_PREF().$url, $text);
 			
 		}
 		delete $wait2{$cnt};
 		$cnt --;
 	});
+	
+	$cnt --;
 }
 
 
@@ -143,10 +144,6 @@ sub worker {
 
 			my $m = 2;
 			my $id = 0;
-			for (1..$m) {
-				$cnt ++;
-				work($cv, ++ $id);
-			}
 			
 			$idle = AnyEvent->idle(cb => sub {
 				if ($is_working) {
@@ -158,6 +155,14 @@ sub worker {
 					}
 				}
 			});
+			
+
+			for (1..$m) {
+				$cnt ++;
+				work($cv, ++ $id);
+			}
+			
+
 			
 			$cv->recv;
 		},

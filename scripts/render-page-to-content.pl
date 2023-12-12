@@ -27,6 +27,7 @@ sub render_url_to_text {
 	my $base_url = $page;
 	$base_url =~ s/\#.*$//;
 	$base_url =~ s/\?.*$//;
+	$base_url =~ s/^(https?:\/\/[^\/]+)$/$1\//;
 	$base_url =~ s/\/[^\/]*$/\//;
 
 	my $key = "$pref:page:$page";
@@ -36,7 +37,7 @@ sub render_url_to_text {
 
 	my $fo;
 	open $fo, '>' . $html_file;
-	binmode($fo, ":utf8");
+	binmode($fo);
 	print $fo $html;
 	close $fo;
 
