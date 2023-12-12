@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-my $config;
+our $config;
 BEGIN {
 	use FindBin qw($Bin); 
 	require "$Bin/_init.pl";
@@ -37,19 +37,24 @@ use constant REDIS_PAGE_CTIME => ($config->{'redis_prefix'} . ':ctime:');
 use constant REDIS_QUEUE => ($config->{'redis_prefix'} . ":queue");
 use constant REDIS_LOCK =>( $config->{'redis_prefix'} . ":lock:");
 
-my $redis = AnyEvent::Redis->new(%{$config->{redis}});
+my $redis = AnyEvent::Redis->new(
+	host => $config->{redis}->{host},
+	port => $config->{redis}->{port},
+);
+
 my $redis2 = new Redis(server => join (':', $config->{redis}->{host}, $config->{redis}->{port}));
 
 my $routes = [
 	[[qw/worker/],				\&worker],
-    [[qw/factory start/], 		\&factory],
-    [[qw/stop/], 				\&stop],	
-    [[qw/help/], 				\&help],
+	[[qw/factory start/], 		\&factory],
+	[[qw/stop/], 				\&stop],	
+	[[qw/help/], 				\&help],
 ];
 
 (map {$_->[1]->()} grep {$cmd ~~ $_->[0]} @$routes) or help();
-exit();
 
+
+exit;
 
 sub help {
     say "Usage:";
