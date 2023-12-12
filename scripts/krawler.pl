@@ -10,6 +10,7 @@ use URL::Search;
 use Redis;
 
 use constant REDIS_PAGE_PREF => 'web-krawler:page:';
+use constant REDIS_PAGE_CTIME => 'web-krawler:ctime:';
 use constant REDIS_QUEUE => "web-krawler:queue";
 
 use experimental 'smartmatch';
@@ -71,9 +72,11 @@ sub worker {
 				return unless $header->{content_type} ~~ ['text/html', 'text/plain'];
 				if (length ($data) < 1_00_0000) {
 					$redis->set(REDIS_PAGE_PREF.$url => $data);
+					$redis->set(REDIS_PAGE_CTIME => time());
+					
 					my @urls = URL::Search::extract_urls($data);
 					for (@urls) {
-						$redis->push(REDIS_QUEUE, $_);
+						$redis->push(REDIS_QUEUE, $_) unless $redis->get(REDIS_PAGE_PREF.$_);
 					}
 				}
 			};
