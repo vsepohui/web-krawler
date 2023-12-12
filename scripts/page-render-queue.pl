@@ -74,6 +74,47 @@ my %bad_domain = ();
 
 my $idle = undef;
 
+sub prepare {
+	my ($url, $html, $id) = @_;
+	return '' unless $html;
+	
+	my $base_url = $url;
+	$base_url =~ s/\#.*$//;
+	$base_url =~ s/\?.*$//;
+	$base_url =~ s/^(https?:\/\/[^\/]+)$/$1\//;
+	$base_url =~ s/\/[^\/]*$/\//;
+
+	$html =~ s/\<head\>/\<head\>\<base href=\"$base_url\">/;
+	
+	my $f1 = $Bin . "/../tmp/tmp.$id.$$.html";
+	my $f2 = $Bin . "/../tmp/tmp.$id.$$.txt";
+
+	my $fo;
+	open $fo, '>' . $f1;
+	binmode($fo);
+	print $fo $html;
+	close $fo;
+
+	warn join ' ', "$Bin/../tools/phantomjs-2.1.1-linux-x86_64/bin/phantomjs",  "$Bin/../tmp/phantomjs.script", $f1, $f2;
+	system("$Bin/../tools/phantomjs-2.1.1-linux-x86_64/bin/phantomjs",  "$Bin/../tmp/phantomjs.script", $f1, $f2);
+
+	my $result = '';
+
+	my $fi;
+	open $fi, $f2;
+	binmode($fi);
+	$result = join '', <$fi>;
+	close $fi;	
+	
+	unlink $f1;
+	unlink $f2;
+
+	
+	return $result;
+
+}
+
+
 sub work {
 	my $cv = shift;
 	my $id = shift;
@@ -89,20 +130,17 @@ sub work {
 		
 		my ($q, $url) = @$p;
 		
-		#warn $url;
+		warn $url;
 		if ($url) {
 			my $tmp_file = "$Bin/../tmp/tmp.$$.$id.html";
 			my $tmp_file2 = "$Bin/../tmp/tmp.$$.$id.txt";
-			system("$Bin/render-page-to-content.pl", $url, $tmp_file, $tmp_file2);
-			#warn join (" ", "$Bin/render-page-to-content.pl", $url, $tmp_file, $tmp_file2);
-			my $text;
-			my $fi;
-			open $fi, $tmp_file2;
-			binmode($fi);
-			$text = join '', <$fi>;
-			close $fi;
 			
-			unlink $tmp_file2;
+
+			my $pref = $config->{'redis_prefix'};
+
+			my $key = "$pref:page:$url";
+			my $html = $redis2->get($key);
+			my $text = prepare ($url, $html, $id);
 
 			$redis2->set(REDIS_TEXT_PREF().$url, $text);
 			
@@ -240,3 +278,4 @@ sub factory {
 }
 
 1;
+
