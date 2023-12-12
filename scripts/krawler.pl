@@ -34,6 +34,7 @@ use constant PORT_START_FROM => 3000;
 use constant REDIS_PAGE_PREF => ($config->{'redis_prefix'} . ':page:');
 use constant REDIS_PAGE_CTIME => ($config->{'redis_prefix'} . ':ctime:');
 use constant REDIS_QUEUE => ($config->{'redis_prefix'} . ":queue");
+use constant REDIS_RENDER_QUEUE => ($config->{'redis_prefix'} . ":render-queue");
 use constant REDIS_LOCK =>( $config->{'redis_prefix'} . ":lock:");
 
 my $redis = AnyEvent::Redis->new(
@@ -134,6 +135,7 @@ sub work {
 					#warn "Data $url => " . $data;
 					$redis2->set(REDIS_PAGE_PREF().$url => $data);
 					$redis2->set(REDIS_PAGE_CTIME().$url => time());
+					$redis2->rpush(REDIS_RENDER_QUEUE(), $url);
 					
 					my @as;
 					my $p = HTML::LinkExtor->new(sub {
@@ -142,7 +144,6 @@ sub work {
 						push(@as, values %attr);
 					});
 					
-					my @urls = uniq (URL::Search::extract_urls($data));
 					$p->parse($data);
 
 					for my $url (grep {$_} @as) {
