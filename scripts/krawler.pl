@@ -62,34 +62,38 @@ sub work {
 
 		warn "Fetching $url";
 	
-		$waits{$url} = http_get $url, sub {
-			delete $waits{$url};
-			work() if $cnt < 8000;
-			$redis2->hdel(REDIS_LOCK(),$url);
-			warn "Fetched url $url";
-			my $data = shift;
-			my $headers = shift;
-			use Data::Dumper;
-			warn Dumper ($headers);
-			my $type = $headers->{'content-type'};
-			$type =~ s/;.+$//;
-			return unless $type ~~ ['text/html', 'text/plain'];
-			if (length ($data) < 1_00_0000) {
-				warn "Data $url => " . $data;
-				$redis2->set(REDIS_PAGE_PREF().$url => $data);
-				$redis2->set(REDIS_PAGE_CTIME() => time());
-				
-				my @urls = uniq (URL::Search::extract_urls($data));
-				for my $url (@urls) {
-					warn "Found url: $url";
-					unless ($redis2->get(REDIS_PAGE_PREF.$url) && $redis2->hget(REDIS_LOCK(),$url)) {
-						$redis2->hset(REDIS_LOCK(), $url => 1);
-						warn "rpush(REDIS_QUEUE(), $url)";
-						$redis2->rpush(REDIS_QUEUE(), $url);
+		$waits{$url} = http_request(
+			GET => $url, 
+			headers => { "user-agent" => "MySearchClient 1.0" },
+			sub {
+				delete $waits{$url};
+				work() if $cnt < 8000;
+				$redis2->hdel(REDIS_LOCK(),$url);
+				warn "Fetched url $url";
+				my $data = shift;
+				my $headers = shift;
+				use Data::Dumper;
+				warn Dumper ($headers);
+				my $type = $headers->{'content-type'};
+				$type =~ s/;.+$//;
+				return unless $type ~~ ['text/html', 'text/plain'];
+				if (length ($data) < 1_00_0000) {
+					warn "Data $url => " . $data;
+					$redis2->set(REDIS_PAGE_PREF().$url => $data);
+					$redis2->set(REDIS_PAGE_CTIME() => time());
+					
+					my @urls = uniq (URL::Search::extract_urls($data));
+					for my $url (@urls) {
+						warn "Found url: $url";
+						unless ($redis2->get(REDIS_PAGE_PREF.$url) && $redis2->hget(REDIS_LOCK(),$url)) {
+							$redis2->hset(REDIS_LOCK(), $url => 1);
+							warn "rpush(REDIS_QUEUE(), $url)";
+							$redis2->rpush(REDIS_QUEUE(), $url);
+						}
 					}
 				}
-			}
-		};
+			},
+		);
 		work() if $cnt < 8000;
 	});
 	#
