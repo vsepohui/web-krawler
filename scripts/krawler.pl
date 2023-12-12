@@ -68,9 +68,6 @@ sub work {
 	$wait2{$cnt} = $redis->blpop(REDIS_QUEUE(), 10, sub {
 		delete $wait2{$cnt};
 
-		use Data::Dumper;
-		warn "URL => ".Dumper \@_;
-		
 		my ($p) = @_;
 		unless ($p) {
 			$cnt --;
@@ -86,8 +83,6 @@ sub work {
 			return;
 		}
 
-		warn "Fetching $url";
-	
 		$waits{$url} = http_request(
 			GET => $url, 
 			headers => { "user-agent" => "MySearchClient 1.0" },
@@ -101,12 +96,11 @@ sub work {
 				my $host2 = $host;
 				my ($proto) = $url =~ /^(\w+):\/\//;
 				my $url_base = $url;
-						
-				warn "Fetched url $url";
+
 				my $data = shift;
 				my $headers = shift;
 				use Data::Dumper;
-				warn Dumper ($headers);
+				#warn Dumper ($headers);
 
 				if ($headers->{Status} eq '506') {
 					#$redis2->set(REDIS_PAGE_CTIME().$url => time());
@@ -128,7 +122,7 @@ sub work {
 					return;
 				}
 				if (length ($data) < 1_00_0000) {
-					warn "Data $url => " . $data;
+					#warn "Data $url => " . $data;
 					$redis2->set(REDIS_PAGE_PREF().$url => $data);
 					$redis2->set(REDIS_PAGE_CTIME().$url => time());
 					
@@ -141,22 +135,27 @@ sub work {
 					
 					my @urls = uniq (URL::Search::extract_urls($data));
 					$p->parse($data);
-					warn Dumper \@as;
+
 					for my $url (grep {$_} @as) {
 						next if $url =~ /^javascript\s*:/;
 						if ($url =~ /^\//) {
 							$url = "$proto:\/\/$host2" . $url;
 						} elsif ($url =~ /^https?:\/\// ) {
 							1;
-						}  elsif ($url =~ /^\/\// ) {
+						} elsif ($url =~ /^(tg|mailto):\/\// ) {
+							next;
+						} elsif ($url =~ /^\/\// ) {
 							$url = $proto . ':' . $url;
-						} elsif ($url =~ /^\[.]/ ) {
+						} elsif ($url =~ /^[\w\d_]/ ) {
+							$url = $url_base . $url;
+						} elsif ($url =~ /^\#/) {
+							next;
+						} elsif ($url =~ /^\?/) {
 							$url = $url_base . $url;
 						} else {
 							warn "Wrong url $url";
 							next;
 						}
-						warn $url;
 						my $uri = URI->new($url);
 						my $host = $uri->host;
 							
@@ -164,10 +163,8 @@ sub work {
 						next if ($bad_domain{$host} > 10);
 						next if $url =~ /^https?\:\/\/www\.w3\.org\//;
 						next if $url =~ /\.(js|css|png|jpeg|jpg|gif|mp3|webp|font|ttf)\??/;
-						warn "Found url: $url";
 						unless ($redis2->get(REDIS_PAGE_PREF.$url) && $redis2->hget(REDIS_LOCK(),$url)) {
 							$redis2->hset(REDIS_LOCK(), $url => 1);
-							warn "rpush(REDIS_QUEUE(), $url)";
 							$redis2->rpush(REDIS_QUEUE(), $url);
 						}
 					}
