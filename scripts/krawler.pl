@@ -1,11 +1,18 @@
 #!/usr/bin/perl
 
-BEGIN {use FindBin qw($Bin); require "$Bin/_init.pl"};
+my $config;
+BEGIN {
+	use FindBin qw($Bin); 
+	require "$Bin/_init.pl";
+	use lib "$Bin/../lib";
+	use Krawler::Config;
+	$config = Krawler::Config->get;
+};
+
 use 5.024;
 use AnyEvent;
 use AnyEvent::HTTP;
 use Sub::Daemon;
-use Krawler::Config;
 use URL::Search;
 use HTML::LinkExtor;
 use Redis;
@@ -14,11 +21,7 @@ use List::Uniq qw/uniq/;
 use URI;
 use utf8;
 
-use constant PORT_START_FROM => 3000;
-use constant REDIS_PAGE_PREF => 'web-krawler:page:';
-use constant REDIS_PAGE_CTIME => 'web-krawler:ctime:';
-use constant REDIS_QUEUE => "web-krawler:queue";
-use constant REDIS_LOCK => "web-krawler:lock:";
+
 
 use experimental 'smartmatch';
 
@@ -27,7 +30,12 @@ $AnyEvent::HTTP::MAX_PER_HOST = 8;
 my $cmd = $ARGV[0] || 'help';
 $cmd =~ s/\W//g;
 
-my $config = Krawler::Config->get;
+
+use constant PORT_START_FROM => 3000;
+use constant REDIS_PAGE_PREF => ($config->{'redis_prefix'} . ':page:');
+use constant REDIS_PAGE_CTIME => ($config->{'redis_prefix'} . ':ctime:');
+use constant REDIS_QUEUE => ($config->{'redis_prefix'} . ":queue");
+use constant REDIS_LOCK =>( $config->{'redis_prefix'} . ":lock:");
 
 my $redis = AnyEvent::Redis->new(%{$config->{redis}});
 my $redis2 = new Redis(server => join (':', $config->{redis}->{host}, $config->{redis}->{port}));
