@@ -63,13 +63,17 @@ sub work {
 	$cnt ++;
 
 	warn "Startig BLPOP";
-	$wait2{$cnt} = $redis->blpop(REDIS_QUEUE(), 300, sub {
+	$wait2{$cnt} = $redis->blpop(REDIS_QUEUE(), 3, sub {
 		delete $wait2{$cnt};
-		my ($p) = @_;
-		my ($q, $url) = @$p;;
-		
+
 		use Data::Dumper;
 		warn "URL => ".Dumper \@_;
+		
+		my ($p) = @_;
+		return unless $p;
+		my ($q, $url) = @$p;
+		
+
 					
 		unless ($url) {
 			warn "No url";
@@ -114,18 +118,17 @@ sub work {
 					$redis2->set(REDIS_PAGE_CTIME() => time());
 					
 					my @as;
-					sub callback {
+					my $p = HTML::LinkExtor->new(sub {
 						my($tag, %attr) = @_;
 						return if $tag ne 'a';  # we only look closer at <img ...>
 						push(@as, values %attr);
-					}
-					
-					my $p = HTML::LinkExtor->new(\&callback);
+					});
 					
 					my @urls = uniq (URL::Search::extract_urls($data));
 					$p->parse($data);
 					warn Dumper \@as;
-					for my $url (map {$_->{href}} @as) {
+					for my $url (grep {$_} @as) {
+						next if $url =~ /^javascript\s*:/;
 						if ($url =~ /^\//) {
 							$url = "$proto:\/\/$host2" . $url;
 						} elsif ($url =~ /^\https?:\/\// ) {
@@ -134,7 +137,11 @@ sub work {
 							$url = $proto . ':' . $url;
 						} elsif ($url =~ /^\[.]/ ) {
 							$url = $url_base . $url;
+						} else {
+							warn "Worng url $url";
+							next;
 						}
+						warn $url;
 						my $uri = URI->new($url);
 						my $host = $uri->host;
 							
@@ -150,7 +157,8 @@ sub work {
 						}
 					}
 				}
-				$cv->send unless keys %wait2;
+				return $cv->send unless keys %wait2;
+				work();
 			},
 		);
 	});
@@ -165,13 +173,13 @@ sub worker {
 	}
 
 	my $daemon = new Sub::Daemon(
-		debug => 1,
+		debug => 0,
 		piddir 	=> "$Bin/../pids/",
 		logdir 	=> "$Bin/../logs/",
 		pidfile => "krawler.worker.$port.pid",
 		logfile => "krawler.worker.$port.log",
 	);
-	#$daemon->_daemonize;
+	$daemon->_daemonize;
 	
 	$daemon->spawn(
 		nproc => 1,
@@ -183,7 +191,8 @@ sub worker {
 			$SIG{$_} = sub { $cv->send } for qw( TERM INT );
 			$SIG{'HUP'} = sub {$cv->send};
 
-			work($cv) for 1..($config->{max_requests_per_one_process});
+			my $m = $config->{max_requests_per_one_process};
+			work($cv) for 1..$m;
 			
 			$cv->recv;
 		},
@@ -193,11 +202,11 @@ sub worker {
 
 sub factory {
 	my $daemon = new Sub::Daemon(
-		debug => 1,
+		debug => 0,
 		piddir => "$Bin/../pids/",
 		logdir => "$Bin/../logs/",
 	);
-	#$daemon->_daemonize;
+	$daemon->_daemonize;
 	
 	my $procs = $config->{ncpus};
 	
