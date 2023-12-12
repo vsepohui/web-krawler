@@ -208,9 +208,10 @@ sub worker {
 			my $startup_time = scalar localtime;
 			
 			my $cv = AnyEvent->condvar;
+			my $is_working = 1;
 			
-			$SIG{$_} = sub { $cv->send } for qw( TERM INT );
-			$SIG{'HUP'} = sub {$cv->send};
+			$SIG{$_} = sub {$is_working = 0; $cv->send } for qw( TERM INT );
+			$SIG{'HUP'} = sub {$is_working = 0; $cv->send};
 
 			my $m = $config->{max_requests_per_one_process};
 			for (1..$m) {
@@ -219,10 +220,12 @@ sub worker {
 			}
 			
 			$idle = AnyEvent->idle(cb => sub {
-				if ($cnt < $m) {
-					for (1..($m-$cnt)) {
-						work($cv);
-						$cnt ++;
+				if ($is_working) {
+					if ($cnt < $m) {
+						for (1..($m-$cnt)) {
+							work($cv);
+							$cnt ++;
+						}
 					}
 				}
 			});
