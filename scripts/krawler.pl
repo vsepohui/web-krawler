@@ -183,7 +183,7 @@ sub worker {
 			$SIG{$_} = sub { $cv->send } for qw( TERM INT );
 			$SIG{'HUP'} = sub {$cv->send};
 
-			work($cv) for 1..$config->{max_requests_per_one_process};
+			work($cv) for 1..($config->{max_requests_per_one_process});
 			
 			$cv->recv;
 		},
