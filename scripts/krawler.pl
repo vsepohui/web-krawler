@@ -3,11 +3,13 @@
 BEGIN {use FindBin qw($Bin); require "$Bin/_init.pl"};
 use 5.024;
 use AnyEvent;
-use AnyEvent::HTTPD;
+use AnyEvent::HTTP;
 use Sub::Daemon;
 use Krawler::Config;
+use Redis;
 
-use constant PORT_START_FROM => 3000;
+use constant REDIS_PAGE_PREF => 'web-krawler:page:';
+use constant REDIS_QUEUE => "web-krawler:queue";
 
 use experimental 'smartmatch';
 
@@ -15,6 +17,7 @@ my $cmd = $ARGV[0] || 'help';
 $cmd =~ s/\W//g;
 
 my $config = Krawler::Config->get;
+my $redis = new Redis;
 
 my $routes = [
 	[[qw/worker/],				\&worker],
@@ -56,25 +59,18 @@ sub worker {
 			my $startup_time = scalar localtime;
 			
 			my $cv = AnyEvent->condvar;
-			my $httpd = AnyEvent::HTTPD->new(port => $port);
-			$httpd->reg_cb(
-				request => sub {
-					my $httpd = shift;
-					my $req   = shift;
-					
-					my $url = $req->url;
-					
-					$req->respond({
-						content => [
-							'text/html',
-							"Hello on MIR -> $url; Startup time (for debug): $startup_time",
-						],
-					});
-				},
-			);
 			
 			$SIG{$_} = sub { $cv->send } for qw( TERM INT );
 			$SIG{'HUP'} = sub {$cv->send};
+			
+			my $url = $redis->blpop(REDIS_QUEUE);
+			http_get $url, sub {
+				my $data = shift;
+				my $headers = shift;
+				if (length ($data) < 1_00_0000) {
+					$redis->set(REDIS_PAGE_PREF.$url => $data);
+				}
+			};
 			
 			$cv->wait;
 		},
@@ -97,6 +93,8 @@ sub factory {
 		warn "Start worker on port $port";
 		`$Bin/$0 worker $port`;
 	}
+	
+	$redis->push(REDIS_QUEUE, $config->{homepage});
 
 	$daemon->spawn(
 		nproc => 1,
