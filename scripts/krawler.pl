@@ -6,6 +6,7 @@ use AnyEvent;
 use AnyEvent::HTTP;
 use Sub::Daemon;
 use Krawler::Config;
+use URL::Search;
 use Redis;
 
 use constant REDIS_PAGE_PREF => 'web-krawler:page:';
@@ -69,6 +70,10 @@ sub worker {
 				my $headers = shift;
 				if (length ($data) < 1_00_0000) {
 					$redis->set(REDIS_PAGE_PREF.$url => $data);
+					my @urls = URL::Search::extract_urls($data);
+					for (@urls) {
+						$redis->push(REDIS_QUEUE, $_);
+					}
 				}
 			};
 			
