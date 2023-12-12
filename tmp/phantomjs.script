@@ -1,9 +1,12 @@
 var page = require('webpage').create();
 var fs = require('fs');
 
-page.open('index.html', function() {
+var system = require('system');
+var args = system.args;
+
+page.open(args[1], function() {
     setTimeout(function() {
-        fs.write('./out.txt', page.plainText, 'w');
+        fs.write(args[2], page.plainText, 'w');
         phantom.exit();
     }, 200);
 });

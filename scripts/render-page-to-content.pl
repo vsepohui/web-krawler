@@ -5,15 +5,22 @@ use 5.024;
 
 use Krawler::Config;
 use Redis;
+use utf8;
 
 use experimental 'smartmatch';
 
 my $config = Krawler::Config->get;
-my $redis = new Redis(server => join (':', $config->{redis}->{host}, $config->{redis}->{port}));
+my $redis = new Redis(server => join (':', $config->{redis}->{host}, $config->{redis}->{port}), encoding => 'utf-8');
 my $pref = $config->{'redis_prefix'};
 
+
 my $url = $ARGV[0] or die 'Url is not specified';
-say render_url_to_text($url);
+my $html_file = $ARGV[1] or die 'Html file  is not specified';
+my $file = $ARGV[2] or die 'Out file  is not specified';
+
+render_url_to_text($url);
+
+
 
 sub render_url_to_text {
 	my $page = shift;
@@ -28,21 +35,19 @@ sub render_url_to_text {
 	$html =~ s/\<head\>/\<head\>\<base href=\"$base_url\">/;
 
 	my $fo;
-	open $fo, '>'. $Bin .'/../tmp/index.html';
+	open $fo, '>' . $html_file;
+	binmode($fo, ":utf8");
 	print $fo $html;
 	close $fo;
 
-	`cd $Bin/../tmp && $Bin/../tools/phantomjs-2.1.1-linux-x86_64/bin/phantomjs phantomjs.script`;
+
+	system("$Bin/../tools/phantomjs-2.1.1-linux-x86_64/bin/phantomjs",  "$Bin/../tmp/phantomjs.script", $html_file, $file);
 	
-	my $fi;
-	open $fi, "$Bin/../tmp/out.txt";
-	my $text = join '', <$fi>;
-	close $fi;
 	
-	unlink "$Bin/../tmp/out.txt";
-	unlink "$Bin/../tmp/index.html";
+	unlink $html_file;
+
 	
-	return $text;
+	return;
 }
 
 1;
